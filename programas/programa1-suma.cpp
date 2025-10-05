@@ -10,6 +10,7 @@ int main(){
         "addl %%ebx, %%eax\n"
         : "=r"(resultado) 
         : "r"(a), "r"(b)
+        : "eax", "ebx"
     );
 
     cout << resultado << endl;
