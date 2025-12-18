@@ -1,0 +1,17 @@
+Private Sub Assembler_button_Click()
+    Me.Hide
+    AssemblerForm.Show
+End Sub
+
+Private Sub Cpp_button_Click()
+    Me.Hide
+    CppForm.Show
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    ' Si cierra con la X, solo ocultar
+    If CloseMode = vbFormControlMenu Then
+        Cancel = True
+        Me.Hide
+    End If
+End Sub

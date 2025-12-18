@@ -1,0 +1,328 @@
+Option Explicit
+
+' Cache lines
+Private L1_LINES As Long
+Private L2_LINES As Long
+
+' Ages
+Private l1Age() As Long
+Private l2Age() As Long
+
+
+
+Private Const UI_R0 As Long = 44
+Private Const UI_LOG_START As Long = 52
+Private Const UI_LOG_END As Long = 56
+
+Private uiLogRow As Long
+
+Private Sub LRU_UI_Init(ByVal ws As Worksheet)
+    ' T咜ulos
+    ws.Range("O44:U56").ClearContents
+    ws.Range("O44:U44").Merge
+    ws.Range("O44").Value = "LRU - PANEL DIDACTICO"
+    ws.Range("O44").Font.Bold = True
+
+    ' Etiquetas
+    ws.Range("O45").Value = "TAG":      ws.Range("O46").Value = "RESULT"
+    ws.Range("O47").Value = "LEVEL":    ws.Range("O48").Value = "ACTION"
+    ws.Range("O49").Value = "VICTIM"
+
+    ws.Range("O45:O49").Font.Bold = True
+
+    ' Headers log
+    ws.Range("O51").Value = "TAG"
+    ws.Range("P51").Value = "RES"
+    ws.Range("Q51").Value = "LVL"
+    ws.Range("R51").Value = "ACT"
+    ws.Range("S51").Value = "VICTIM"
+    ws.Range("O51:S51").Font.Bold = True
+
+    uiLogRow = UI_LOG_START
+End Sub
+
+Private Sub LRU_UI_Update(ByVal ws As Worksheet, ByVal tag As String, ByVal result As String, ByVal level As String, ByVal action As String, Optional ByVal victim As String = "")
+    ' Panel (valores)
+    ws.Range("P45:U45").Merge: ws.Range("P45").Value = tag
+    ws.Range("P46:U46").Merge: ws.Range("P46").Value = result
+    ws.Range("P47:U47").Merge: ws.Range("P47").Value = level
+    ws.Range("P48:U48").Merge: ws.Range("P48").Value = action
+    ws.Range("P49:U49").Merge: ws.Range("P49").Value = victim
+
+    ' Resaltado r疳ido para que se 砺ea・
+    ws.Range("P46:U46").Interior.ColorIndex = xlNone
+    If UCase$(result) = "HIT" Then
+        ws.Range("P46:U46").Interior.color = vbGreen
+    ElseIf UCase$(result) = "MISS" Then
+        ws.Range("P46:U46").Interior.color = vbRed
+    End If
+    DoEvents
+    Call Espera(0.05)
+    ws.Range("P46:U46").Interior.ColorIndex = xlNone
+
+    ' Log (伃timas 5)
+    If uiLogRow > UI_LOG_END Then
+        ws.Range("O" & UI_LOG_START & ":S" & UI_LOG_END).Value = ws.Range("O" & (UI_LOG_START + 1) & ":S" & UI_LOG_END).Value
+        uiLogRow = UI_LOG_END
+    End If
+
+    ws.Range("O" & uiLogRow).Value = tag
+    ws.Range("P" & uiLogRow).Value = result
+    ws.Range("Q" & uiLogRow).Value = level
+    ws.Range("R" & uiLogRow).Value = action
+    ws.Range("S" & uiLogRow).Value = victim
+
+    uiLogRow = uiLogRow + 1
+End Sub
+
+
+Public Sub LRU_InitCaches(ByVal ws As Worksheet)
+    Call InicializarConstantesMemoria
+
+    L1_LINES = (L1_FIN - L1_INICIO + 1)
+    L2_LINES = (L2_FIN - L2_INICIO + 1)
+
+    ReDim l1Age(1 To L1_LINES)
+    ReDim l2Age(1 To L2_LINES)
+
+    Dim i As Long
+    For i = 1 To L1_LINES: l1Age(i) = 0: Next i
+    For i = 1 To L2_LINES: l2Age(i) = 0: Next i
+    
+    Call LRU_UI_Init(ws)
+
+End Sub
+
+
+
+' Acceso principal: intenta L1 -> L2 -> RAM -> VM
+' y trae a L1 (y a L2 si era RAM/VM).
+Public Sub LRU_AccesoCache(ByVal ws As Worksheet, ByVal tag As String)
+
+    If Trim(tag) = "" Then Exit Sub
+
+    Dim idx As Long
+
+    ' 1) L1 HIT?
+    idx = LRU_FindInL1(ws, tag)
+    If idx > 0 Then
+        LRU_TouchL1 idx
+        Call LRU_UI_Update(ws, tag, "HIT", "L1", "Touch line " & idx)
+        Exit Sub
+    End If
+
+    ' 2) L2 HIT?
+    idx = LRU_FindInL2(ws, tag)
+    If idx > 0 Then
+        LRU_TouchL2 idx
+        LRU_InsertIntoL1 ws, tag
+        Call LRU_UI_Update(ws, tag, "HIT", "L2", "Promote to L1")
+        Exit Sub
+    End If
+
+    ' 3) RAM?
+    If LRU_ExistsInRange(ws, "AD", RAM_INICIO, RAM_FIN, tag) Then
+        LRU_InsertIntoL2 ws, tag
+        LRU_InsertIntoL1 ws, tag
+        Call LRU_UI_Update(ws, tag, "MISS", "RAM", "Bring to L2+L1")
+        Exit Sub
+    End If
+
+    ' 4) VM?
+    If LRU_ExistsInRange(ws, "AJ", VMEM_INICIO, VMEM_FIN, tag) Then
+        LRU_InsertIntoL2 ws, tag
+        LRU_InsertIntoL1 ws, tag
+        Call LRU_UI_Update(ws, tag, "MISS", "VM", "Page-in to L2+L1")
+        Exit Sub
+    End If
+
+    Call LRU_UI_Update(ws, tag, "MISS", "NONE", "Not found")
+End Sub
+
+
+' --------------------------
+' Helpers de b俍queda
+' --------------------------
+Private Function LRU_FindInL1(ByVal ws As Worksheet, ByVal tag As String) As Long
+    Dim i As Long, r As Long
+    For i = 1 To L1_LINES
+        r = L1_INICIO + i - 1
+        If CStr(ws.Range("U" & r).Value) = tag Then
+            LRU_FindInL1 = i
+            Exit Function
+        End If
+    Next i
+    LRU_FindInL1 = 0
+End Function
+
+Private Function LRU_FindInL2(ByVal ws As Worksheet, ByVal tag As String) As Long
+    Dim i As Long, r As Long
+    For i = 1 To L2_LINES
+        r = L2_INICIO + i - 1
+        If CStr(ws.Range("X" & r).Value) = tag Then
+            LRU_FindInL2 = i
+            Exit Function
+        End If
+    Next i
+    LRU_FindInL2 = 0
+End Function
+
+Private Function LRU_ExistsInRange(ByVal ws As Worksheet, ByVal col As String, ByVal rIni As Long, ByVal rFin As Long, ByVal tag As String) As Boolean
+    Dim r As Long
+    For r = rIni To rFin
+        If CStr(ws.Range(col & r).Value) = tag Then
+            LRU_ExistsInRange = True
+            Exit Function
+        End If
+    Next r
+    LRU_ExistsInRange = False
+End Function
+
+' --------------------------
+' Touch (actualizar edades)
+' --------------------------
+Private Sub LRU_TouchL1(ByVal touchedIdx As Long)
+    Dim i As Long
+    For i = 1 To L1_LINES
+        If i = touchedIdx Then
+            l1Age(i) = 0
+        Else
+            l1Age(i) = l1Age(i) + 1
+        End If
+    Next i
+End Sub
+
+Private Sub LRU_TouchL2(ByVal touchedIdx As Long)
+    Dim i As Long
+    For i = 1 To L2_LINES
+        If i = touchedIdx Then
+            l2Age(i) = 0
+        Else
+            l2Age(i) = l2Age(i) + 1
+        End If
+    Next i
+End Sub
+
+' --------------------------
+' Insert con reemplazo LRU
+' --------------------------
+Private Sub LRU_InsertIntoL1(ByVal ws As Worksheet, ByVal tag As String)
+    Dim idx As Long
+    Dim victimTag As String
+    Dim usedVictim As Boolean
+    usedVictim = False
+
+    ' si ya est・ solo tocar
+    idx = LRU_FindInL1(ws, tag)
+    If idx > 0 Then
+        LRU_TouchL1 idx
+        Call LRU_UI_Update(ws, tag, "HIT", "L1", "Touch line " & idx, "")
+        Exit Sub
+    End If
+
+    ' buscar hueco; si no hay -> v兤tima LRU
+    idx = LRU_FirstEmptyInL1(ws)
+    If idx = 0 Then
+        idx = LRU_VictimL1()
+        usedVictim = True
+        victimTag = CStr(ws.Range("U" & (L1_INICIO + idx - 1)).Value) ' ANTES de pisar
+    End If
+
+    ' escribir en la l匤ea elegida
+    Dim r As Long
+    r = L1_INICIO + idx - 1
+    ws.Range("U" & r).Value = tag
+
+    LRU_TouchL1 idx
+
+    ' imprimir evento did當tico
+    If usedVictim Then
+        Call LRU_UI_Update(ws, tag, "MISS", "L1", "Replace line " & idx, "Victim: " & victimTag)
+    Else
+        Call LRU_UI_Update(ws, tag, "MISS", "L1", "Fill empty line " & idx, "")
+    End If
+End Sub
+
+
+Private Sub LRU_InsertIntoL2(ByVal ws As Worksheet, ByVal tag As String)
+    Dim idx As Long
+    Dim victimTag As String
+    Dim usedVictim As Boolean
+    usedVictim = False
+
+    idx = LRU_FindInL2(ws, tag)
+    If idx > 0 Then
+        LRU_TouchL2 idx
+        Call LRU_UI_Update(ws, tag, "HIT", "L2", "Touch line " & idx, "")
+        Exit Sub
+    End If
+
+    idx = LRU_FirstEmptyInL2(ws)
+    If idx = 0 Then
+        idx = LRU_VictimL2()
+        usedVictim = True
+        victimTag = CStr(ws.Range("X" & (L2_INICIO + idx - 1)).Value)
+    End If
+
+    Dim r As Long
+    r = L2_INICIO + idx - 1
+    ws.Range("X" & r).Value = tag
+
+    LRU_TouchL2 idx
+
+    If usedVictim Then
+        Call LRU_UI_Update(ws, tag, "MISS", "L2", "Replace line " & idx, "Victim: " & victimTag)
+    Else
+        Call LRU_UI_Update(ws, tag, "MISS", "L2", "Fill empty line " & idx, "")
+    End If
+End Sub
+
+
+Private Function LRU_FirstEmptyInL1(ByVal ws As Worksheet) As Long
+    Dim i As Long, r As Long
+    For i = 1 To L1_LINES
+        r = L1_INICIO + i - 1
+        If Trim(CStr(ws.Range("U" & r).Value)) = "" Then
+            LRU_FirstEmptyInL1 = i
+            Exit Function
+        End If
+    Next i
+    LRU_FirstEmptyInL1 = 0
+End Function
+
+Private Function LRU_FirstEmptyInL2(ByVal ws As Worksheet) As Long
+    Dim i As Long, r As Long
+    For i = 1 To L2_LINES
+        r = L2_INICIO + i - 1
+        If Trim(CStr(ws.Range("X" & r).Value)) = "" Then
+            LRU_FirstEmptyInL2 = i
+            Exit Function
+        End If
+    Next i
+    LRU_FirstEmptyInL2 = 0
+End Function
+
+Private Function LRU_VictimL1() As Long
+    Dim i As Long, maxAge As Long, victim As Long
+    maxAge = -1: victim = 1
+    For i = 1 To L1_LINES
+        If l1Age(i) > maxAge Then
+            maxAge = l1Age(i)
+            victim = i
+        End If
+    Next i
+    LRU_VictimL1 = victim
+End Function
+
+Private Function LRU_VictimL2() As Long
+    Dim i As Long, maxAge As Long, victim As Long
+    maxAge = -1: victim = 1
+    For i = 1 To L2_LINES
+        If l2Age(i) > maxAge Then
+            maxAge = l2Age(i)
+            victim = i
+        End If
+    Next i
+    LRU_VictimL2 = victim
+End Function
+

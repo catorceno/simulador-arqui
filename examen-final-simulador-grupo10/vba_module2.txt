@@ -1,0 +1,37 @@
+Option Explicit
+
+' ============================================================
+' CONSTANTES DE LIMITES DE MEMORIA (GLOBALES)
+' ============================================================
+Public RAM_INICIO As Long
+Public RAM_FIN As Long
+Public L2_INICIO As Long
+Public L2_FIN As Long
+Public L1_INICIO As Long
+Public L1_FIN As Long
+Public VMEM_INICIO As Long
+Public VMEM_FIN As Long
+
+Public FilaRAMActual As Long
+Public FilaVMemActual As Long
+
+Public FormatoRAM As String
+
+Public Sub InicializarConstantesMemoria()
+    RAM_INICIO = 3
+    RAM_FIN = 102
+    L2_INICIO = 5
+    L2_FIN = 66
+    L1_INICIO = 5
+    L1_FIN = 42
+    VMEM_INICIO = 5
+    VMEM_FIN = 101
+End Sub
+
+Public Sub Espera(segundos As Double)
+    Dim EndTime As Double
+    EndTime = Timer + segundos
+    Do While Timer < EndTime
+        DoEvents
+    Loop
+End Sub

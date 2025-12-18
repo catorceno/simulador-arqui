@@ -1,0 +1,775 @@
+' ============================================================
+' COMPILADOR C++ A ASSEMBLER x86
+' Para usar en CppForm
+' ============================================================
+
+' Tabla de simbolos (variables declaradas)
+Private Type TVariable
+    nombre As String
+    tipo As String
+    registro As String
+    Valor As Long
+End Type
+
+Private Variables() As TVariable
+Private NumVariables As Integer
+Private RegistrosDisponibles As Variant
+
+' ============================================================
+' INICIALIZACION DEL COMPILADOR
+' ============================================================
+
+Sub InicializarCompilador()
+    NumVariables = 0
+    ReDim Variables(0 To 50)
+    RegistrosDisponibles = Array("EAX", "EBX", "ECX", "EDX")
+End Sub
+
+' ============================================================
+' FUNCION PRINCIPAL DE COMPILACION
+' ============================================================
+
+Function CompilarCpp(codigoCpp As String) As String
+    Dim lineas() As String
+    Dim i As Integer
+    Dim resultado As String
+    Dim lineaLimpia As String
+    
+    Call InicializarCompilador
+    
+    resultado = ""
+    
+    ' Limpiar y dividir codigo
+    codigoCpp = Replace(codigoCpp, vbCrLf, vbLf)
+    codigoCpp = Replace(codigoCpp, vbCr, vbLf)
+    lineas = Split(codigoCpp, vbLf)
+    
+    For i = LBound(lineas) To UBound(lineas)
+        lineaLimpia = LimpiarLinea(lineas(i))
+        
+        If lineaLimpia <> "" Then
+            Dim asmLinea As String
+            asmLinea = TraducirLinea(lineaLimpia)
+            
+            If asmLinea <> "" Then
+                If resultado <> "" Then resultado = resultado & " | "
+                resultado = resultado & asmLinea
+            End If
+        End If
+    Next i
+    
+    CompilarCpp = resultado
+End Function
+
+' ============================================================
+' LIMPIEZA DE LINEA
+' ============================================================
+
+Function LimpiarLinea(linea As String) As String
+    Dim resultado As String
+    
+    resultado = Trim(linea)
+    
+    ' Remover comentarios de linea //
+    If InStr(resultado, "//") > 0 Then
+        resultado = Trim(Left(resultado, InStr(resultado, "//") - 1))
+    End If
+    
+    ' Ignorar lineas vacias, includes, using namespace
+    If resultado = "" Then
+        LimpiarLinea = ""
+    ElseIf Left(resultado, 1) = "#" Then
+        LimpiarLinea = ""
+    ElseIf InStr(resultado, "using namespace") > 0 Then
+        LimpiarLinea = ""
+    ElseIf resultado = "{" Or resultado = "}" Then
+        LimpiarLinea = ""
+    ElseIf InStr(resultado, "int main") > 0 Then
+        LimpiarLinea = ""
+    ElseIf InStr(resultado, "return 0") > 0 Then
+        LimpiarLinea = ""
+    Else
+        LimpiarLinea = resultado
+    End If
+End Function
+
+' ============================================================
+' TRADUCTOR DE LINEA C++ A ASSEMBLER
+' ============================================================
+
+Function TraducirLinea(linea As String) As String
+    Dim resultado As String
+    resultado = ""
+    
+    ' Remover punto y coma final
+    If Right(linea, 1) = ";" Then
+        linea = Left(linea, Len(linea) - 1)
+    End If
+    
+    ' Detectar tipo de instruccion
+    If EsDeclaracionVariable(linea) Then
+        resultado = TraducirDeclaracion(linea)
+        
+    ElseIf EsAsignacion(linea) Then
+        resultado = TraducirAsignacion(linea)
+        
+    ElseIf EsOperacionAritmetica(linea) Then
+        resultado = TraducirOperacionAritmetica(linea)
+        
+    ElseIf EsOperacionCompuesta(linea) Then
+        resultado = TraducirOperacionCompuesta(linea)
+        
+    ElseIf EsIncremento(linea) Then
+        resultado = TraducirIncremento(linea)
+        
+    ElseIf EsDecremento(linea) Then
+        resultado = TraducirDecremento(linea)
+        
+    ElseIf EsPrintf(linea) Or EsCout(linea) Then
+        resultado = TraducirSalida(linea)
+        
+    ElseIf EsScanf(linea) Or EsCin(linea) Then
+        resultado = TraducirEntrada(linea)
+        
+    End If
+    
+    TraducirLinea = resultado
+End Function
+
+' ============================================================
+' DETECTORES DE TIPO DE INSTRUCCION
+' ============================================================
+
+Function EsDeclaracionVariable(linea As String) As Boolean
+    EsDeclaracionVariable = (InStr(linea, "int ") = 1) Or _
+                            (InStr(linea, "long ") = 1) Or _
+                            (InStr(linea, "short ") = 1) Or _
+                            (InStr(linea, "char ") = 1)
+End Function
+
+Function EsAsignacion(linea As String) As Boolean
+    ' variable = valor (sin declaracion de tipo)
+    If InStr(linea, "=") > 0 Then
+        If InStr(linea, "==") = 0 And _
+           InStr(linea, "!=") = 0 And _
+           InStr(linea, "<=") = 0 And _
+           InStr(linea, ">=") = 0 And _
+           InStr(linea, "+=") = 0 And _
+           InStr(linea, "-=") = 0 And _
+           InStr(linea, "*=") = 0 And _
+           InStr(linea, "/=") = 0 And _
+           Not EsDeclaracionVariable(linea) Then
+            EsAsignacion = True
+        End If
+    End If
+End Function
+
+Function EsOperacionAritmetica(linea As String) As Boolean
+    ' Detecta: a = b + c, a = b - c, etc.
+    If InStr(linea, "=") > 0 Then
+        Dim partes() As String
+        partes = Split(linea, "=")
+        If UBound(partes) >= 1 Then
+            Dim expr As String
+            expr = Trim(partes(1))
+            EsOperacionAritmetica = (InStr(expr, "+") > 0) Or _
+                                    (InStr(expr, "-") > 0) Or _
+                                    (InStr(expr, "*") > 0) Or _
+                                    (InStr(expr, "/") > 0) Or _
+                                    (InStr(expr, "%") > 0) Or _
+                                    (InStr(expr, "&") > 0) Or _
+                                    (InStr(expr, "|") > 0) Or _
+                                    (InStr(expr, "^") > 0)
+        End If
+    End If
+End Function
+
+Function EsOperacionCompuesta(linea As String) As Boolean
+    EsOperacionCompuesta = (InStr(linea, "+=") > 0) Or _
+                           (InStr(linea, "-=") > 0) Or _
+                           (InStr(linea, "*=") > 0) Or _
+                           (InStr(linea, "/=") > 0) Or _
+                           (InStr(linea, "&=") > 0) Or _
+                           (InStr(linea, "|=") > 0) Or _
+                           (InStr(linea, "^=") > 0)
+End Function
+
+Function EsIncremento(linea As String) As Boolean
+    EsIncremento = (InStr(linea, "++") > 0)
+End Function
+
+Function EsDecremento(linea As String) As Boolean
+    EsDecremento = (InStr(linea, "--") > 0)
+End Function
+
+Function EsPrintf(linea As String) As Boolean
+    EsPrintf = (InStr(linea, "printf") > 0)
+End Function
+
+Function EsCout(linea As String) As Boolean
+    EsCout = (InStr(linea, "cout") > 0)
+End Function
+
+Function EsScanf(linea As String) As Boolean
+    EsScanf = (InStr(linea, "scanf") > 0)
+End Function
+
+Function EsCin(linea As String) As Boolean
+    EsCin = (InStr(linea, "cin") > 0)
+End Function
+
+' ============================================================
+' TRADUCTORES ESPECIFICOS
+' ============================================================
+
+' Traduce: int x = 10; int y; int a = b;
+Function TraducirDeclaracion(linea As String) As String
+    Dim partes() As String
+    Dim nombreVar As String
+    Dim valorStr As String
+    Dim registro As String
+    Dim resultado As String
+    
+    resultado = ""
+    
+    ' Remover tipo (int, long, etc.)
+    linea = Trim(Mid(linea, InStr(linea, " ") + 1))
+    
+    ' Verificar si tiene asignacion
+    If InStr(linea, "=") > 0 Then
+        partes = Split(linea, "=", 2)  ' Solo dividir en 2 partes
+        nombreVar = Trim(partes(0))
+        valorStr = Trim(partes(1))
+    Else
+        nombreVar = Trim(linea)
+        valorStr = "0"
+    End If
+    
+    ' Asignar registro para la nueva variable
+    registro = AsignarRegistro(nombreVar)
+    
+    ' Guardar en tabla de simbolos
+    Call AgregarVariable(nombreVar, "int", registro)
+    
+    ' =====================================================
+    ' NUEVO: Verificar si valorStr contiene una operacion
+    ' =====================================================
+    If ContieneOperador(valorStr) Then
+        ' Es una expresion como "a + b"
+        resultado = TraducirExpresionAritmetica(nombreVar, registro, valorStr)
+    ElseIf IsNumeric(valorStr) Then
+        ' Es un valor numerico directo
+        resultado = "MOV " & registro & ", " & valorStr
+    Else
+        ' Es otra variable
+        Dim regFuente As String
+        regFuente = ObtenerRegistroVariable(valorStr)
+        If regFuente <> "" Then
+            resultado = "MOV " & registro & ", " & regFuente
+        Else
+            resultado = "MOV " & registro & ", 0"
+        End If
+    End If
+    
+    TraducirDeclaracion = resultado
+End Function
+
+' =====================================================
+' NUEVA FUNCION: Detecta si hay operador en la expresion
+' =====================================================
+Function ContieneOperador(expr As String) As Boolean
+    ContieneOperador = (InStr(expr, "+") > 0) Or _
+                       (InStr(expr, "-") > 0) Or _
+                       (InStr(expr, "*") > 0) Or _
+                       (InStr(expr, "/") > 0) Or _
+                       (InStr(expr, "%") > 0) Or _
+                       (InStr(expr, "&") > 0) Or _
+                       (InStr(expr, "|") > 0) Or _
+                       (InStr(expr, "^") > 0)
+End Function
+
+' =====================================================
+' NUEVA FUNCION: Traduce expresion aritmetica
+' =====================================================
+Function TraducirExpresionAritmetica(nombreVar As String, regDest As String, expresion As String) As String
+    Dim operador As String
+    Dim instruccion As String
+    Dim operandos() As String
+    Dim op1 As String, op2 As String
+    Dim regOp1 As String, regOp2 As String
+    Dim resultado As String
+    
+    ' Detectar operador
+    If InStr(expresion, "+") > 0 Then
+        operador = "+"
+        instruccion = "ADD"
+    ElseIf InStr(expresion, "-") > 0 Then
+        operador = "-"
+        instruccion = "SUB"
+    ElseIf InStr(expresion, "*") > 0 Then
+        operador = "*"
+        instruccion = "MUL"
+    ElseIf InStr(expresion, "/") > 0 Then
+        operador = "/"
+        instruccion = "DIV"
+    ElseIf InStr(expresion, "%") > 0 Then
+        operador = "%"
+        instruccion = "DIV"
+    ElseIf InStr(expresion, "&") > 0 Then
+        operador = "&"
+        instruccion = "AND"
+    ElseIf InStr(expresion, "|") > 0 Then
+        operador = "|"
+        instruccion = "OR"
+    ElseIf InStr(expresion, "^") > 0 Then
+        operador = "^"
+        instruccion = "XOR"
+    End If
+    
+    ' Separar operandos
+    operandos = Split(expresion, operador)
+    op1 = Trim(operandos(0))
+    op2 = Trim(operandos(1))
+    
+    ' Cargar operando 1 en registro destino
+    If IsNumeric(op1) Then
+        resultado = "MOV " & regDest & ", " & op1
+    Else
+        regOp1 = ObtenerRegistroVariable(op1)
+        If regOp1 <> "" Then
+            resultado = "MOV " & regDest & ", " & regOp1
+        Else
+            resultado = "MOV " & regDest & ", 0"
+        End If
+    End If
+    
+    ' Aplicar operacion con operando 2
+    If IsNumeric(op2) Then
+        resultado = resultado & " | " & instruccion & " " & regDest & ", " & op2
+    Else
+        regOp2 = ObtenerRegistroVariable(op2)
+        If regOp2 <> "" Then
+            resultado = resultado & " | " & instruccion & " " & regDest & ", " & regOp2
+        End If
+    End If
+    
+    TraducirExpresionAritmetica = resultado
+End Function
+
+' Traduce: x = 10; x = y;
+Function TraducirAsignacion(linea As String) As String
+    Dim partes() As String
+    Dim nombreVar As String
+    Dim valorStr As String
+    Dim registro As String
+    Dim resultado As String
+    
+    partes = Split(linea, "=")
+    nombreVar = Trim(partes(0))
+    valorStr = Trim(partes(1))
+    
+    registro = ObtenerRegistroVariable(nombreVar)
+    
+    If registro = "" Then
+        ' Variable no declarada, asignar registro
+        registro = AsignarRegistro(nombreVar)
+        Call AgregarVariable(nombreVar, "int", registro)
+    End If
+    
+    If IsNumeric(valorStr) Then
+        resultado = "MOV " & registro & ", " & valorStr
+    Else
+        Dim regFuente As String
+        regFuente = ObtenerRegistroVariable(valorStr)
+        If regFuente <> "" Then
+            resultado = "MOV " & registro & ", " & regFuente
+        End If
+    End If
+    
+    TraducirAsignacion = resultado
+End Function
+
+' Traduce: a = b + c; a = b - c; a = b * c; a = b / c;
+Function TraducirOperacionAritmetica(linea As String) As String
+    Dim partes() As String
+    Dim destino As String
+    Dim expresion As String
+    Dim operador As String
+    Dim operandos() As String
+    Dim regDest As String, regOp1 As String, regOp2 As String
+    Dim resultado As String
+    Dim instruccion As String
+    
+    partes = Split(linea, "=")
+    destino = Trim(partes(0))
+    expresion = Trim(partes(1))
+    
+    ' Detectar operador
+    If InStr(expresion, "+") > 0 Then
+        operador = "+"
+        instruccion = "ADD"
+    ElseIf InStr(expresion, "-") > 0 Then
+        operador = "-"
+        instruccion = "SUB"
+    ElseIf InStr(expresion, "*") > 0 Then
+        operador = "*"
+        instruccion = "MUL"
+    ElseIf InStr(expresion, "/") > 0 Then
+        operador = "/"
+        instruccion = "DIV"
+    ElseIf InStr(expresion, "%") > 0 Then
+        operador = "%"
+        instruccion = "DIV"  ' El modulo usa DIV, resultado en EDX
+    ElseIf InStr(expresion, "&") > 0 Then
+        operador = "&"
+        instruccion = "AND"
+    ElseIf InStr(expresion, "|") > 0 Then
+        operador = "|"
+        instruccion = "OR"
+    ElseIf InStr(expresion, "^") > 0 Then
+        operador = "^"
+        instruccion = "XOR"
+    End If
+    
+    operandos = Split(expresion, operador)
+    
+    Dim op1 As String, op2 As String
+    op1 = Trim(operandos(0))
+    op2 = Trim(operandos(1))
+    
+    regDest = ObtenerRegistroVariable(destino)
+    If regDest = "" Then
+        regDest = AsignarRegistro(destino)
+        Call AgregarVariable(destino, "int", regDest)
+    End If
+    
+    ' Cargar operando 1
+    If IsNumeric(op1) Then
+        resultado = "MOV " & regDest & ", " & op1
+    Else
+        regOp1 = ObtenerRegistroVariable(op1)
+        If regOp1 <> "" Then
+            resultado = "MOV " & regDest & ", " & regOp1
+        End If
+    End If
+    
+    ' Aplicar operacion con operando 2
+    If IsNumeric(op2) Then
+        resultado = resultado & " | " & instruccion & " " & regDest & ", " & op2
+    Else
+        regOp2 = ObtenerRegistroVariable(op2)
+        If regOp2 <> "" Then
+            resultado = resultado & " | " & instruccion & " " & regDest & ", " & regOp2
+        End If
+    End If
+    
+    TraducirOperacionAritmetica = resultado
+End Function
+
+' Traduce: x += 5; x -= 3; x *= 2; x /= 4;
+Function TraducirOperacionCompuesta(linea As String) As String
+    Dim nombreVar As String
+    Dim valorStr As String
+    Dim registro As String
+    Dim instruccion As String
+    Dim resultado As String
+    
+    If InStr(linea, "+=") > 0 Then
+        nombreVar = Trim(Split(linea, "+=")(0))
+        valorStr = Trim(Split(linea, "+=")(1))
+        instruccion = "ADD"
+    ElseIf InStr(linea, "-=") > 0 Then
+        nombreVar = Trim(Split(linea, "-=")(0))
+        valorStr = Trim(Split(linea, "-=")(1))
+        instruccion = "SUB"
+    ElseIf InStr(linea, "*=") > 0 Then
+        nombreVar = Trim(Split(linea, "*=")(0))
+        valorStr = Trim(Split(linea, "*=")(1))
+        instruccion = "MUL"
+    ElseIf InStr(linea, "/=") > 0 Then
+        nombreVar = Trim(Split(linea, "/=")(0))
+        valorStr = Trim(Split(linea, "/=")(1))
+        instruccion = "DIV"
+    ElseIf InStr(linea, "&=") > 0 Then
+        nombreVar = Trim(Split(linea, "&=")(0))
+        valorStr = Trim(Split(linea, "&=")(1))
+        instruccion = "AND"
+    ElseIf InStr(linea, "|=") > 0 Then
+        nombreVar = Trim(Split(linea, "|=")(0))
+        valorStr = Trim(Split(linea, "|=")(1))
+        instruccion = "OR"
+    ElseIf InStr(linea, "^=") > 0 Then
+        nombreVar = Trim(Split(linea, "^=")(0))
+        valorStr = Trim(Split(linea, "^=")(1))
+        instruccion = "XOR"
+    End If
+    
+    registro = ObtenerRegistroVariable(nombreVar)
+    
+    If registro <> "" Then
+        If IsNumeric(valorStr) Then
+            resultado = instruccion & " " & registro & ", " & valorStr
+        Else
+            Dim regFuente As String
+            regFuente = ObtenerRegistroVariable(valorStr)
+            If regFuente <> "" Then
+                resultado = instruccion & " " & registro & ", " & regFuente
+            End If
+        End If
+    End If
+    
+    TraducirOperacionCompuesta = resultado
+End Function
+
+' Traduce: x++; ++x;
+Function TraducirIncremento(linea As String) As String
+    Dim nombreVar As String
+    Dim registro As String
+    
+    nombreVar = Replace(Replace(linea, "++", ""), " ", "")
+    registro = ObtenerRegistroVariable(nombreVar)
+    
+    If registro <> "" Then
+        TraducirIncremento = "INC " & registro
+    Else
+        TraducirIncremento = ""
+    End If
+End Function
+
+' Traduce: x--; --x;
+Function TraducirDecremento(linea As String) As String
+    Dim nombreVar As String
+    Dim registro As String
+    
+    nombreVar = Replace(Replace(linea, "--", ""), " ", "")
+    registro = ObtenerRegistroVariable(nombreVar)
+    
+    If registro <> "" Then
+        TraducirDecremento = "DEC " & registro
+    Else
+        TraducirDecremento = ""
+    End If
+End Function
+
+' Traduce: printf("%d", x); cout << x;
+Function TraducirSalida(linea As String) As String
+    Dim nombreVar As String
+    Dim registro As String
+    Dim resultado As String
+    
+    resultado = ""
+    
+    ' Extraer variable de printf o cout
+    If InStr(linea, "printf") > 0 Then
+        ' printf("%d", x) -> extraer x
+        Dim partes() As String
+        partes = Split(linea, ",")
+        If UBound(partes) >= 1 Then
+            nombreVar = Trim(partes(1))
+            nombreVar = Replace(nombreVar, ")", "")
+            nombreVar = Replace(nombreVar, ";", "")
+            nombreVar = Trim(nombreVar)
+        End If
+    ElseIf InStr(linea, "cout") > 0 Then
+        ' cout << x -> extraer x
+        If InStr(linea, "<<") > 0 Then
+            nombreVar = Trim(Split(linea, "<<")(1))
+            nombreVar = Replace(nombreVar, ";", "")
+            nombreVar = Trim(nombreVar)
+            ' Ignorar endl
+            If InStr(nombreVar, "<<") > 0 Then
+                nombreVar = Trim(Split(nombreVar, "<<")(0))
+            End If
+        End If
+    End If
+    
+    ' Si es una variable, mover a PANTALLA
+    If nombreVar <> "" And nombreVar <> "endl" Then
+        registro = ObtenerRegistroVariable(nombreVar)
+        If registro <> "" Then
+            resultado = "MOV PANTALLA, " & registro
+        ElseIf IsNumeric(nombreVar) Then
+            resultado = "MOV EAX, " & nombreVar & " | MOV PANTALLA, EAX"
+        End If
+    End If
+    
+    TraducirSalida = resultado
+End Function
+
+' Traduce: scanf("%d", &x); cin >> x;
+Function TraducirEntrada(linea As String) As String
+    ' Simplificado: simular entrada con valor fijo
+    TraducirEntrada = "MOV EAX, 0"
+End Function
+
+' ============================================================
+' GESTION DE TABLA DE SIMBOLOS
+' ============================================================
+
+Sub AgregarVariable(nombre As String, tipo As String, registro As String)
+    Variables(NumVariables).nombre = nombre
+    Variables(NumVariables).tipo = tipo
+    Variables(NumVariables).registro = registro
+    Variables(NumVariables).Valor = 0
+    NumVariables = NumVariables + 1
+End Sub
+
+Function ObtenerRegistroVariable(nombre As String) As String
+    Dim i As Integer
+    
+    For i = 0 To NumVariables - 1
+        If Variables(i).nombre = nombre Then
+            ObtenerRegistroVariable = Variables(i).registro
+            Exit Function
+        End If
+    Next i
+    
+    ObtenerRegistroVariable = ""
+End Function
+
+Function AsignarRegistro(nombreVar As String) As String
+    ' Asignar registros en orden: EAX, EBX, ECX, EDX
+    Select Case NumVariables Mod 4
+        Case 0: AsignarRegistro = "EAX"
+        Case 1: AsignarRegistro = "EBX"
+        Case 2: AsignarRegistro = "ECX"
+        Case 3: AsignarRegistro = "EDX"
+    End Select
+End Function
+
+' ============================================================
+' CODIGO PARA CppForm
+' ============================================================
+
+' Agregar este codigo al formulario CppForm
+' Asegurate de tener:
+'   - Un TextBox llamado "txtCodigo" (MultiLine = True)
+'   - Un boton "btnCompilar"
+'   - Un boton "btnCancelar"
+'   - Opcionalmente un Label "lblResultado" para mostrar el ASM
+
+Private Sub btnCompilar_Click()
+    Dim codigoCpp As String
+    Dim codigoAsm As String
+    Dim CodigoVirtual As Variant
+    Dim ws As Worksheet
+    
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    codigoCpp = txtCodigo.Value
+    
+    If Trim(codigoCpp) = "" Then
+        MsgBox "Ingresa codigo C++", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Preguntar formato
+    Dim respuesta As Integer
+    respuesta = MsgBox("?En que formato mostrar los datos en RAM?" & vbCrLf & vbCrLf & _
+                       "SI = BINARIO" & vbCrLf & _
+                       "NO = HEXADECIMAL" & vbCrLf & _
+                       "CANCELAR = TEXTO", vbYesNoCancel, "Formato de RAM")
+    
+    If respuesta = vbYes Then
+        FormatoRAM = "BIN"
+    ElseIf respuesta = vbNo Then
+        FormatoRAM = "HEX"
+    Else
+        FormatoRAM = "TXT"
+    End If
+    
+    ' Compilar C++ a Assembler
+    codigoAsm = CompilarCpp(codigoCpp)
+    
+    ' Mostrar resultado de compilacion
+    MsgBox "COMPILACION EXITOSA" & vbCrLf & vbCrLf & _
+           "Codigo C++ traducido a:" & vbCrLf & _
+           Replace(codigoAsm, " | ", vbCrLf), vbInformation, "Compilador C++"
+    
+    Me.Hide
+    
+    ' Parsear y ejecutar
+    CodigoVirtual = ParsearCodigoUsuario(codigoAsm)
+    
+    MsgBox "Cargando codigo maquina en RAM...", vbInformation, "Loader"
+    
+    Call Execute_x86_Virtual(CodigoVirtual)
+    
+    Unload Me
+End Sub
+
+Private Sub btnCancelar_Click()
+    Unload Me
+End Sub
+
+Private Sub UserForm_Initialize()
+    ' Ejemplo de codigo para el usuario
+    txtCodigo.Value = "// Ejemplo de codigo C++" & vbCrLf & _
+                      "int a = 10;" & vbCrLf & _
+                      "int b = 20;" & vbCrLf & _
+                      "int c = a + b;" & vbCrLf & _
+                      "c++;" & vbCrLf & _
+                      "cout << c;"
+End Sub
+
+' ============================================================
+' EJEMPLOS DE CODIGO C++ SOPORTADO
+' ============================================================
+'
+' DECLARACIONES:
+'   int x = 10;
+'   int y;
+'   int z = x;
+'
+' ASIGNACIONES:
+'   x = 50;
+'   y = x;
+'
+' OPERACIONES ARITMETICAS:
+'   c = a + b;
+'   c = a - b;
+'   c = a * b;
+'   c = a / b;
+'
+' OPERACIONES LOGICAS:
+'   c = a & b;   (AND)
+'   c = a | b;   (OR)
+'   c = a ^ b;   (XOR)
+'
+' OPERACIONES COMPUESTAS:
+'   x += 5;
+'   x -= 3;
+'   x *= 2;
+'   x /= 4;
+'
+' INCREMENTO/DECREMENTO:
+'   x++;
+'   ++x;
+'   x--;
+'   --x;
+'
+' SALIDA:
+'   printf("%d", x);
+'   cout << x;
+'
+' ============================================================
+' EJEMPLO COMPLETO:
+' ============================================================
+'
+' #include <iostream>
+' using namespace std;
+'
+' int main() {
+'     int a = 10;
+'     int b = 20;
+'     int c = a + b;
+'     c++;
+'     cout << c;
+'     return 0;
+' }
+'
+' SE TRADUCE A:
+'   MOV EAX, 10 | MOV EBX, 20 | MOV ECX, EAX | ADD ECX, EBX | INC ECX | MOV PANTALLA, ECX
+'
+' ============================================================
+

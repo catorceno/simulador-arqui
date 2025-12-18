@@ -1,0 +1,44 @@
+Private Sub assembler_run_Click()
+    Dim codigoRaw As String
+    Dim CodigoVirtual As Variant
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    ' Obtener código del TextBox del formulario
+    codigoRaw = TextBox.Value  ' Asume que tienes un TextBox llamado txtCodigo
+    
+    If Trim(codigoRaw) = "" Then
+        MsgBox "Ingresa código assembler", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Preguntar formato
+    Dim respuesta As Integer
+    respuesta = MsgBox("¿En qué formato mostrar los datos en RAM?" & vbCrLf & vbCrLf & _
+                       "SÍ = BINARIO" & vbCrLf & _
+                       "NO = HEXADECIMAL" & vbCrLf & _
+                       "CANCELAR = TEXTO", vbYesNoCancel, "Formato de RAM")
+    
+    If respuesta = vbYes Then
+        Arrorw1.FormatoRAM = "BIN"
+    ElseIf respuesta = vbNo Then
+        Arrorw1.FormatoRAM = "HEX"
+    Else
+        Arrorw1.FormatoRAM = "TXT"
+    End If
+    
+    Me.Hide
+    
+    MsgBox "1. UNIDAD DE ENTRADA: TECLADO" & vbCrLf & _
+           "Enviando código Assembler a la RAM...", vbInformation, "Fase de Entrada"
+    
+    CodigoVirtual = Arrorw1.ParsearCodigoUsuario(codigoRaw)
+    
+    Call Arrorw1.Execute_x86_Virtual(CodigoVirtual)
+    
+    Unload Me
+End Sub
+
+Private Sub btnCancelar_Click()
+    Unload Me
+End Sub

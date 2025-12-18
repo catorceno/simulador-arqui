@@ -1,0 +1,48 @@
+Private Sub run_cpp_Click()
+    Dim codigoCpp As String
+    Dim codigoAsm As String
+    Dim CodigoVirtual As Variant
+    
+    codigoCpp = TextBox.Value
+    
+    If Trim(codigoCpp) = "" Then
+        MsgBox "Ingresa código C++", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Preguntar formato
+    Dim respuesta As Integer
+    respuesta = MsgBox("¿En qué formato mostrar los datos en RAM?" & vbCrLf & vbCrLf & _
+                       "SI = BINARIO" & vbCrLf & _
+                       "NO = HEXADECIMAL" & vbCrLf & _
+                       "CANCELAR = TEXTO", vbYesNoCancel, "Formato de RAM")
+    
+    If respuesta = vbYes Then
+        Arrorw1.FormatoRAM = "BIN"
+    ElseIf respuesta = vbNo Then
+        Arrorw1.FormatoRAM = "HEX"
+    Else
+        Arrorw1.FormatoRAM = "TXT"
+    End If
+    
+    ' Compilar C++ a Assembler
+    codigoAsm = CompilarCpp(codigoCpp)
+    
+    ' Mostrar resultado de compilación
+    MsgBox "COMPILACIÓN EXITOSA" & vbCrLf & vbCrLf & _
+           "Código C++ traducido a:" & vbCrLf & _
+           Replace(codigoAsm, " | ", vbCrLf), vbInformation, "Compilador C++"
+    
+    Me.Hide
+    
+    ' Parsear y ejecutar
+    CodigoVirtual = Arrorw1.ParsearCodigoUsuario(codigoAsm)
+    
+    Call Arrorw1.Execute_x86_Virtual(CodigoVirtual)
+    
+    Unload Me
+End Sub
+
+Private Sub btnCancelar_Click()
+    Unload Me
+End Sub

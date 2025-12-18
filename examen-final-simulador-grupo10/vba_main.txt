@@ -1,0 +1,1021 @@
+' ==========================================
+'  PARSER (TRADUCTOR DE TEXTO A INSTRUCCIONES)
+' ==========================================
+Function ParsearCodigoUsuario(texto As String) As Variant
+    Dim lineas() As String
+    Dim partes() As String
+    Dim operandos() As String
+    Dim resultado() As String
+    Dim i As Integer
+    Dim lineaLimpia As String
+    
+    ' Dividir por el separador de línea "|"
+    lineas = Split(texto, "|")
+    
+    ' Redimensionar el array al formato que espera tu Execute_x86_Virtual (N filas, 3 columnas)
+    ReDim resultado(1 To UBound(lineas) + 1, 1 To 3)
+    
+    For i = 0 To UBound(lineas)
+        lineaLimpia = Trim(lineas(i))
+        
+        ' Lógica básica de parsing: Separar Opcode de Operandos
+        ' Ejemplo: "MOV EAX, 65" -> partes(0)="MOV", partes(1)="EAX, 65"
+        partes = Split(lineaLimpia, " ", 2)
+        
+        If UBound(partes) >= 0 Then
+            resultado(i + 1, 1) = UCase(Trim(partes(0))) ' Opcode (MOV, ADD, SUB)
+            
+            If UBound(partes) > 0 Then
+                ' Separar operandos por coma
+                ' Ejemplo: "EAX, 65" -> operandos(0)="EAX", operandos(1)="65"
+                If InStr(partes(1), ",") > 0 Then
+                    operandos = Split(partes(1), ",")
+                    resultado(i + 1, 2) = UCase(Trim(operandos(0))) ' Destino
+                    resultado(i + 1, 3) = UCase(Trim(operandos(1))) ' Fuente
+                Else
+                    ' Instrucción de un solo operando (ej: INC EAX)
+                    resultado(i + 1, 2) = UCase(Trim(partes(1)))
+                    resultado(i + 1, 3) = ""
+                End If
+            Else
+                ' Instrucción sin operandos (ej: NOP)
+                resultado(i + 1, 2) = ""
+                resultado(i + 1, 3) = ""
+            End If
+        End If
+    Next i
+    
+    ParsearCodigoUsuario = resultado
+End Function
+
+Sub Btn_Escaner_Click()
+    Dim dato As String
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    dato = InputBox("ENTRADA DE ESCÁNER" & vbCrLf & "Código escaneado:", "Controlador de Escáner")
+    
+    If dato <> "" Then
+        ' --- LIMPIEZA PREVIA DE LA IMPRESORA ---
+        ' Esto simula poner una hoja en blanco
+        ws.Range("AO118").Value = "Impresión Física: "
+        
+        Call IniciarCicloES("ESCANER", dato, "IMPRESORA")
+    End If
+End Sub
+
+' Macros para Mouse y Joystick (llaman a la misma lógica)
+Sub Btn_Mouse_Click_Izq()
+    Call IniciarCicloES("MOUSE", "CLICK_IZQ", "PANTALLA")
+End Sub
+Sub Btn_Mouse_Click_Der()
+    Call IniciarCicloES("MOUSE", "CLICK_DER", "PANTALLA")
+End Sub
+Sub Btn_Joystick_Arriba()
+    Call IniciarCicloES("JOYSTICK", "ARRIBA", "PANTALLA")
+End Sub
+Sub Btn_Joystick_Abajo()
+    Call IniciarCicloES("JOYSTICK", "ABAJO", "PANTALLA")
+End Sub
+
+Sub Btn_Joystick_Izq()
+    Call IniciarCicloES("JOYSTICK", "IZQUIERDA", "PANTALLA")
+End Sub
+
+Sub Btn_Joystick_Der()
+    Call IniciarCicloES("JOYSTICK", "DERECHA", "PANTALLA")
+End Sub
+
+
+' 2. NÚCLEO DE SIMULACIÓN (ADAPTADO PARA CÓDIGO VIRTUAL)
+Sub IniciarCicloES(Dispositivo As String, Datos As String, SalidaDestino As String)
+    Dim i As Integer, longitud As Integer
+    Dim letra As String, valorAscii As String
+    
+    ' === NUEVO: PREGUNTAR FORMATO ===
+    Dim respuesta As Integer
+    respuesta = MsgBox("?En que formato mostrar los datos en RAM?" & vbCrLf & vbCrLf & _
+                       "SI = BINARIO" & vbCrLf & _
+                       "NO = HEXADECIMAL" & vbCrLf & _
+                       "CANCELAR = TEXTO", vbYesNoCancel, "Formato de RAM - " & Dispositivo)
+    
+    If respuesta = vbYes Then
+        FormatoRAM = "BIN"
+    ElseIf respuesta = vbNo Then
+        FormatoRAM = "HEX"
+    Else
+        FormatoRAM = "TXT"
+    End If
+    ' === FIN NUEVO ===
+    
+    ' 1. FASE DE INTERRUPCION
+    MsgBox "1. UNIDAD DE ENTRADA: " & Dispositivo & vbCrLf & _
+           "Datos en Buffer: " & Datos & vbCrLf & _
+           "Formato de salida: " & FormatoRAM & vbCrLf & _
+           "Solicitando transferencia a CPU...", vbInformation, "IRQ - " & Dispositivo
+
+    ' 2. DETERMINAR LONGITUD DEL BUCLE
+    longitud = Len(Datos)
+    
+    ' 3. GENERAR CODIGO VIRTUAL DINAMICO (DRIVER)
+    Dim TotalInstrucciones As Integer
+    TotalInstrucciones = longitud * 2
+    
+    Dim CodigoVirtual() As String
+    ReDim CodigoVirtual(1 To TotalInstrucciones, 1 To 3)
+    
+    Dim k As Integer
+    k = 1
+    
+    For i = 1 To longitud
+        letra = Mid(Datos, i, 1)
+        valorAscii = CStr(Asc(letra))
+        
+        CodigoVirtual(k, 1) = "MOV"
+        CodigoVirtual(k, 2) = "EAX"
+        CodigoVirtual(k, 3) = valorAscii
+        
+        CodigoVirtual(k + 1, 1) = "MOV"
+        CodigoVirtual(k + 1, 2) = SalidaDestino
+        CodigoVirtual(k + 1, 3) = "EAX"
+        
+        k = k + 2
+    Next i
+    
+    MsgBox "2. DRIVER DE E/S" & vbCrLf & _
+           "Se han generado " & TotalInstrucciones & " micro-instrucciones." & vbCrLf & _
+           "Formato en RAM: " & FormatoRAM, vbExclamation
+
+    ' 4. EJECUCION DEL BUCLE EN CPU
+    Call Execute_x86_Virtual(CodigoVirtual)
+    
+End Sub
+
+' 3. VERSIÓN ADAPTADA DEL SIMULADOR (NO USA CELDAS DE CÓDIGO)
+Sub Execute_x86_Virtual(CodeArray As Variant)
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    Call InicializarConstantesMemoria
+    Dim i As Integer
+    Dim opcode As String, dest As String, src As String
+    Dim bytesArray() As String
+    Dim j As Integer
+    Dim valorMostrar As String
+    
+    ' A. LIMPIEZA E INICIALIZACION COMPLETA
+    ws.Range("AD3:AD102").ClearContents       ' RAM Principal
+    ws.Range("AJ5:AJ101").ClearContents       ' Memoria Virtual
+    ws.Range("X5:X66").ClearContents          ' Cache L2
+    ws.Range("U5:U42").ClearContents          ' Cache L1
+    
+    Call LRU_InitCaches(ws)
+    
+    ' Quitar resaltados
+    ws.Range("AD3:AD102").Interior.ColorIndex = xlNone
+    ws.Range("AJ5:AJ101").Interior.ColorIndex = xlNone
+    ws.Range("X5:X66").Interior.ColorIndex = xlNone
+    ws.Range("U5:U42").Interior.ColorIndex = xlNone
+    
+    ' Inicializar CPU (UC, ALU, Registros)
+    Call InicializarComponentesCPU(ws)
+    
+    ' Inicializar contadores de memoria
+    FilaRAMActual = RAM_INICIO
+    FilaVMemActual = VMEM_INICIO
+    
+    ' B. CARGA VISUAL A RAM/MEMORIA VIRTUAL CON FORMATO LITTLE-ENDIAN
+    For i = 1 To UBound(CodeArray, 1)
+        opcode = CodeArray(i, 1)
+        dest = CodeArray(i, 2)
+        src = CodeArray(i, 3)
+        
+        If UCase(FormatoRAM) = "TXT" Or FormatoRAM = "" Then
+            valorMostrar = opcode & " " & dest & ", " & src
+            Call CargarByteAMemoria(ws, valorMostrar)
+        Else
+            bytesArray = ObtenerBytesLittleEndian(opcode, dest, src)
+            For j = LBound(bytesArray) To UBound(bytesArray)
+                If bytesArray(j) <> "" Then
+                    If UCase(FormatoRAM) = "BIN" Then
+                        valorMostrar = HexByteToBinary(bytesArray(j))
+                    Else
+                        valorMostrar = Chr(34) & bytesArray(j) & Chr(34)
+                    End If
+                    Call CargarByteAMemoria(ws, valorMostrar)
+                End If
+            Next j
+        End If
+    Next i
+    
+    ' C. TRANSFERENCIA RAM -> L2 -> L1 (!AHORA SI FUNCIONA!)
+    Call TransferirRAMaCacheVirtual(ws)
+    
+    ' D. EJECUCION CON PIPELINE COMPLETO (UC + ALU)
+    For i = 1 To UBound(CodeArray, 1)
+        opcode = UCase(CodeArray(i, 1))
+        dest = CodeArray(i, 2)
+        src = CodeArray(i, 3)
+        
+        ' === ETAPA 1: FETCH ===
+        Call AnimacionFetch_Virtual(ws, opcode, dest, src, i)
+        
+        ' === ETAPA 2: DECODE ===
+        Call AnimacionDecode_Virtual(ws, opcode, dest, src)
+        
+        ' === ETAPA 3: EXECUTE ===
+        Call AnimacionExecute_Virtual(ws, opcode, dest, src)
+        
+        ' === ETAPA 4: WRITE BACK ===
+        Call AnimacionWriteBack_Virtual(ws, opcode, dest, src)
+        
+        ' Actualizar EIP
+        Call ActualizarEIP(ws)
+        
+        DoEvents
+    Next i
+    
+    MsgBox "Ejecucion completada con Pipeline!" & vbCrLf & _
+           "RAM usada: " & (FilaRAMActual - RAM_INICIO) & " celdas" & vbCrLf & _
+           "Memoria Virtual usada: " & (FilaVMemActual - VMEM_INICIO) & " celdas" & vbCrLf & _
+           "UC y ALU procesaron todas las instrucciones.", vbInformation
+End Sub
+
+' Función auxiliar para obtener valor numérico (maneja "EAX" o "10")
+Function ObtenerValorOLiteral(ws As Worksheet, fuente As String) As Long
+    ' Si es un número directo
+    If IsNumeric(fuente) Then
+        ObtenerValorOLiteral = CLng(fuente)
+        Exit Function
+    End If
+    ' Si es un registro (ej. EAX), leemos su valor actual de la celda F7
+    Select Case UCase(fuente)
+        Case "EAX": ObtenerValorOLiteral = ws.Range("F7").Value
+        Case "EBX": ObtenerValorOLiteral = ws.Range("F8").Value
+        Case "ECX": ObtenerValorOLiteral = ws.Range("F9").Value
+        Case "EDX": ObtenerValorOLiteral = ws.Range("F10").Value
+        Case Else: ObtenerValorOLiteral = 0
+    End Select
+End Function
+
+' Escritura en Registros para la versión virtual
+Sub EscribirEnRegistro_Virtual(ws As Worksheet, reg As String, val As String)
+    Dim celda As Range
+    Select Case UCase(reg)
+        Case "EAX": Set celda = ws.Range("F7")
+        Case "EBX": Set celda = ws.Range("F8")
+        Case "ECX": Set celda = ws.Range("F9")
+        Case "EDX": Set celda = ws.Range("F10")
+    End Select
+    
+    If Not celda Is Nothing Then
+        celda.Value = val
+        celda.Interior.color = vbYellow
+        Call Espera(0.3)
+        celda.Interior.ColorIndex = xlNone
+    End If
+End Sub
+
+' 4. CONTROLADOR DE SALIDA (AQUÍ ESTÁ LA CLAVE PARA TUS CELDAS COMBINADAS)
+Sub ManejarSalidaPeriferico(ws As Worksheet, Dispositivo As String, Valor As Long)
+    Dim celdaDestino As Range
+    Dim TextoActual As String
+    Dim NuevoCaracter As String
+    
+    ' Configuración de Direcciones de Salida
+    If UCase(Dispositivo) = "PANTALLA" Then
+        Set celdaDestino = ws.Range("AD115")
+    ElseIf UCase(Dispositivo) = "IMPRESORA" Then
+        Set celdaDestino = ws.Range("AO118") ' Ajusta si tu celda es otra, según la imagen parece correcta
+    End If
+    
+    ' 1. Convertir el código ASCII (número) a Letra Real
+    NuevoCaracter = Chr(Valor)
+    
+    ' 2. Animación de recepción (feedback visual)
+    celdaDestino.Interior.color = vbCyan
+    DoEvents
+    
+    ' 3. LÓGICA DE ACUMULACIÓN (BUFFER DE IMPRESIÓN)
+    If UCase(Dispositivo) = "PANTALLA" Then
+        ' En pantalla solemos querer ver el valor actual procesándose
+        celdaDestino.Value = "Salida Visual: " & Valor & " ('" & NuevoCaracter & "')"
+    Else
+        ' --- AQUÍ ESTÁ LA CORRECCIÓN PARA LA IMPRESORA ---
+        
+        ' A. Leemos lo que YA está escrito en la hoja (el Buffer actual)
+        TextoActual = celdaDestino.Value
+        
+        ' B. Protección: Si la celda estaba vacía o sucia, le ponemos el encabezado
+        If InStr(TextoActual, "Impresión Física:") = 0 Then
+            TextoActual = "Impresión Física: "
+        End If
+        
+        ' C. CONCATENAMOS: Texto Viejo + Nueva Letra
+        celdaDestino.Value = TextoActual & NuevoCaracter
+    End If
+    
+    ' 4. Finalizar animación
+    Call Espera(0.1)
+    celdaDestino.Interior.color = vbGreen
+    Call Espera(0.1)
+    celdaDestino.Interior.ColorIndex = xlNone
+End Sub
+
+' ============================================================
+' MÓDULO: Conversión Binario/Hexadecimal para RAM y Caché
+' Agrega este código a tu proyecto VBA del simulador
+' ============================================================
+
+' Variable global para elegir formato de visualización
+' "BIN", "HEX", o "DEC"
+
+' ============================================================
+' FUNCIONES DE CONVERSIÓN
+' ============================================================
+
+' Convierte un número a binario (8 bits por byte)
+Function DecimalABinario(ByVal numero As Long, Optional bits As Integer = 32) As String
+    Dim resultado As String
+    Dim i As Integer
+    
+    resultado = ""
+    For i = bits - 1 To 0 Step -1
+        If (numero And (2 ^ i)) <> 0 Then
+            resultado = resultado & "1"
+        Else
+            resultado = resultado & "0"
+        End If
+        ' Agregar espacio cada 8 bits para legibilidad
+        If i Mod 8 = 0 And i > 0 Then resultado = resultado & " "
+    Next i
+    
+    DecimalABinario = resultado
+End Function
+
+' Convierte un número a hexadecimal (formato de bytes)
+Function DecimalAHex(ByVal numero As Long, Optional bytes As Integer = 4) As String
+    Dim resultado As String
+    Dim hexStr As String
+    Dim i As Integer
+    
+    hexStr = Right("00000000" & Hex(numero), bytes * 2)
+    
+    ' Separar en bytes (ej: "12345678" -> "12 34 56 78")
+    resultado = ""
+    For i = 1 To Len(hexStr) Step 2
+        If resultado <> "" Then resultado = resultado & " "
+        resultado = resultado & Mid(hexStr, i, 2)
+    Next i
+    
+    DecimalAHex = resultado
+End Function
+
+' Convierte texto/instrucción a su representación en bytes hexadecimales
+Function TextoAHexBytes(texto As String) As String
+    Dim resultado As String
+    Dim i As Integer
+    
+    resultado = ""
+    For i = 1 To Len(texto)
+        If resultado <> "" Then resultado = resultado & " "
+        resultado = resultado & Right("00" & Hex(Asc(Mid(texto, i, 1))), 2)
+    Next i
+    
+    TextoAHexBytes = resultado
+End Function
+
+' Convierte texto a binario (cada carácter = 8 bits)
+Function TextoABinario(texto As String) As String
+    Dim resultado As String
+    Dim i As Integer
+    
+    resultado = ""
+    For i = 1 To Len(texto)
+        If resultado <> "" Then resultado = resultado & " "
+        resultado = resultado & DecimalABinario(Asc(Mid(texto, i, 1)), 8)
+    Next i
+    
+    TextoABinario = resultado
+End Function
+
+' ============================================================
+' CODIFICACIÓN DE INSTRUCCIONES x86 (SIMPLIFICADA)
+' ============================================================
+
+' Genera el opcode hexadecimal de una instrucción x86
+Function CodificarInstruccion(opcode As String, destino As String, fuente As String) As String
+    Dim resultado As String
+    Dim opcodeHex As String
+    Dim modRM As String
+    Dim valorInmediato As String
+    
+    ' Opcodes simplificados (basados en x86 real)
+    Select Case UCase(opcode)
+        Case "MOV"
+            If IsNumeric(fuente) Then
+                ' MOV reg, imm32 -> B8+reg para EAX
+                opcodeHex = ObtenerOpcodeMovImm(destino)
+                valorInmediato = DecimalAHex(CLng(fuente), 4)
+                resultado = opcodeHex & " " & valorInmediato
+            Else
+                ' MOV reg, reg -> 89 /r
+                opcodeHex = "89"
+                modRM = ObtenerModRM(destino, fuente)
+                resultado = opcodeHex & " " & modRM
+            End If
+            
+        Case "ADD"
+            If IsNumeric(fuente) Then
+                opcodeHex = "81"
+                modRM = ObtenerModRMConOperacion(destino, "ADD")
+                valorInmediato = DecimalAHex(CLng(fuente), 4)
+                resultado = opcodeHex & " " & modRM & " " & valorInmediato
+            Else
+                opcodeHex = "01"
+                modRM = ObtenerModRM(destino, fuente)
+                resultado = opcodeHex & " " & modRM
+            End If
+            
+        Case "SUB"
+            If IsNumeric(fuente) Then
+                opcodeHex = "81"
+                modRM = ObtenerModRMConOperacion(destino, "SUB")
+                valorInmediato = DecimalAHex(CLng(fuente), 4)
+                resultado = opcodeHex & " " & modRM & " " & valorInmediato
+            Else
+                opcodeHex = "29"
+                modRM = ObtenerModRM(destino, fuente)
+                resultado = opcodeHex & " " & modRM
+            End If
+            
+        Case "MUL"
+            opcodeHex = "F7"
+            modRM = ObtenerModRMConOperacion(fuente, "MUL")
+            resultado = opcodeHex & " " & modRM
+            
+        Case "DIV"
+            opcodeHex = "F7"
+            modRM = ObtenerModRMConOperacion(fuente, "DIV")
+            resultado = opcodeHex & " " & modRM
+            
+        Case "AND"
+            opcodeHex = "21"
+            modRM = ObtenerModRM(destino, fuente)
+            resultado = opcodeHex & " " & modRM
+            
+        Case "OR"
+            opcodeHex = "09"
+            modRM = ObtenerModRM(destino, fuente)
+            resultado = opcodeHex & " " & modRM
+            
+        Case "XOR"
+            opcodeHex = "31"
+            modRM = ObtenerModRM(destino, fuente)
+            resultado = opcodeHex & " " & modRM
+            
+        Case "INC"
+            opcodeHex = "FF"
+            modRM = ObtenerModRMConOperacion(destino, "INC")
+            resultado = opcodeHex & " " & modRM
+            
+        Case "DEC"
+            opcodeHex = "FF"
+            modRM = ObtenerModRMConOperacion(destino, "DEC")
+            resultado = opcodeHex & " " & modRM
+            
+        Case "CMP"
+            If IsNumeric(fuente) Then
+                opcodeHex = "81"
+                modRM = ObtenerModRMConOperacion(destino, "CMP")
+                valorInmediato = DecimalAHex(CLng(fuente), 4)
+                resultado = opcodeHex & " " & modRM & " " & valorInmediato
+            Else
+                opcodeHex = "39"
+                modRM = ObtenerModRM(destino, fuente)
+                resultado = opcodeHex & " " & modRM
+            End If
+            
+        Case "NOP"
+            resultado = "90"
+            
+        Case Else
+            resultado = "??"
+    End Select
+    
+    CodificarInstruccion = resultado
+End Function
+
+' Obtiene el opcode para MOV reg, imm32
+Function ObtenerOpcodeMovImm(registro As String) As String
+    Select Case UCase(registro)
+        Case "EAX", "AX": ObtenerOpcodeMovImm = "B8"
+        Case "ECX", "CX": ObtenerOpcodeMovImm = "B9"
+        Case "EDX", "DX": ObtenerOpcodeMovImm = "BA"
+        Case "EBX", "BX": ObtenerOpcodeMovImm = "BB"
+        Case "ESP", "SP": ObtenerOpcodeMovImm = "BC"
+        Case "EBP", "BP": ObtenerOpcodeMovImm = "BD"
+        Case "ESI", "SI": ObtenerOpcodeMovImm = "BE"
+        Case "EDI", "DI": ObtenerOpcodeMovImm = "BF"
+        Case Else: ObtenerOpcodeMovImm = "B8"
+    End Select
+End Function
+
+' Obtiene el código de registro (0-7)
+Function CodigoRegistro(registro As String) As Integer
+    Select Case UCase(registro)
+        Case "EAX", "AX", "AL": CodigoRegistro = 0
+        Case "ECX", "CX", "CL": CodigoRegistro = 1
+        Case "EDX", "DX", "DL": CodigoRegistro = 2
+        Case "EBX", "BX", "BL": CodigoRegistro = 3
+        Case "ESP", "SP", "AH": CodigoRegistro = 4
+        Case "EBP", "BP", "CH": CodigoRegistro = 5
+        Case "ESI", "SI", "DH": CodigoRegistro = 6
+        Case "EDI", "DI", "BH": CodigoRegistro = 7
+        Case Else: CodigoRegistro = 0
+    End Select
+End Function
+
+' Genera ModR/M con extensión de opcode
+Function ObtenerModRMConOperacion(registro As String, operacion As String) As String
+    Dim modBits As Integer
+    Dim regBits As Integer
+    Dim rmBits As Integer
+    Dim modRM As Integer
+    
+    modBits = 3
+    rmBits = CodigoRegistro(registro)
+    
+    ' Extensión de opcode según operación
+    Select Case UCase(operacion)
+        Case "ADD": regBits = 0
+        Case "OR": regBits = 1
+        Case "ADC": regBits = 2
+        Case "SBB": regBits = 3
+        Case "AND": regBits = 4
+        Case "SUB": regBits = 5
+        Case "XOR": regBits = 6
+        Case "CMP": regBits = 7
+        Case "INC": regBits = 0
+        Case "DEC": regBits = 1
+        Case "MUL": regBits = 4
+        Case "DIV": regBits = 6
+        Case Else: regBits = 0
+    End Select
+    
+    modRM = (modBits * 64) + (regBits * 8) + rmBits
+    
+    ObtenerModRMConOperacion = Right("00" & Hex(modRM), 2)
+End Function
+
+' ============================================================
+' FUNCIONES MODIFICADAS PARA TU SIMULADOR
+' ============================================================
+
+' Reemplaza LoadInstructionToRAM para mostrar en binario/hex
+Sub LoadInstructionToRAM_Binario(Code As Variant, rowIndex As Integer)
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    Dim opcode As String, destino As String, fuente As String
+    Dim instruccionTexto As String
+    Dim instruccionHex As String
+    Dim instruccionBin As String
+    Dim filaRAM As Long
+    
+    opcode = Trim(Code(rowIndex, 1))
+    destino = Trim(Code(rowIndex, 2))
+    fuente = Trim(Code(rowIndex, 3))
+    
+    instruccionTexto = opcode & " " & destino & ", " & fuente
+    instruccionHex = CodificarInstruccion(opcode, destino, fuente)
+    
+    ' Calcular fila en RAM
+    filaRAM = rowIndex + 2 ' Ajusta según tu layout
+    
+    ' Mostrar según formato seleccionado
+    Select Case UCase(FormatoRAM)
+        Case "BIN"
+            ' Convertir hex a binario para mostrar
+            ws.Range("AD" & filaRAM).Value = HexStringABinario(instruccionHex)
+        Case "HEX"
+            ws.Range("AD" & filaRAM).Value = instruccionHex
+        Case Else ' "DEC" o texto normal
+            ws.Range("AD" & filaRAM).Value = instruccionTexto
+    End Select
+    
+    ' Animación
+    ws.Range("AD" & filaRAM).Interior.color = vbYellow
+    DoEvents
+    Call Espera(0.2)
+    ws.Range("AD" & filaRAM).Interior.ColorIndex = xlNone
+End Sub
+
+Sub LoadInstructionToRAM_LittleEndian(Code As Variant, rowIndex As Integer)
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    Dim opcode As String, destino As String, fuente As String
+    Dim bytesArray() As String
+    Dim i As Integer
+    Dim valorMostrar As String
+    
+    opcode = Trim(Code(rowIndex, 1))
+    destino = Trim(Code(rowIndex, 2))
+    fuente = Trim(Code(rowIndex, 3))
+    
+    ' Si es formato texto, poner toda la instrucción en una celda
+    If UCase(FormatoRAM) = "DEC" Or FormatoRAM = "" Then
+        ws.Range("AD" & FilaRAMActual).Value = opcode & " " & destino & ", " & fuente
+        ws.Range("AD" & FilaRAMActual).Interior.color = vbYellow
+        DoEvents
+        Call Espera(0.15)
+        ws.Range("AD" & FilaRAMActual).Interior.ColorIndex = xlNone
+        FilaRAMActual = FilaRAMActual + 1
+        Exit Sub
+    End If
+    
+    ' Obtener bytes en little-endian
+    bytesArray = ObtenerBytesLittleEndian(opcode, destino, fuente)
+    
+    ' Escribir cada byte en una celda separada
+    For i = LBound(bytesArray) To UBound(bytesArray)
+        If bytesArray(i) <> "" Then
+            ' Convertir a binario si es necesario
+            If UCase(FormatoRAM) = "BIN" Then
+                valorMostrar = HexByteToBinary(bytesArray(i))
+            Else
+                valorMostrar = Chr(34) & bytesArray(i) & Chr(34)
+            End If
+            
+            ' Escribir en celda con animación
+            ws.Range("AD" & FilaRAMActual).Value = valorMostrar
+            ws.Range("AD" & FilaRAMActual).Interior.color = vbYellow
+            DoEvents
+            Call Espera(0.1)
+            ws.Range("AD" & FilaRAMActual).Interior.ColorIndex = xlNone
+            
+            FilaRAMActual = FilaRAMActual + 1
+            
+            ' Verificar límite de RAM
+            If FilaRAMActual > 102 Then
+                MsgBox "RAM llena!", vbExclamation
+                Exit Sub
+            End If
+        End If
+    Next i
+End Sub
+
+' Convierte string hexadecimal a binario
+Function HexStringABinario(hexStr As String) As String
+    Dim resultado As String
+    Dim partes() As String
+    Dim i As Integer
+    Dim valorByte As Integer
+    
+    partes = Split(hexStr, " ")
+    resultado = ""
+    
+    For i = LBound(partes) To UBound(partes)
+        If partes(i) <> "" And partes(i) <> "??" Then
+            valorByte = val("&H" & partes(i))
+            If resultado <> "" Then resultado = resultado & " "
+            resultado = resultado & DecimalABinario(valorByte, 8)
+        End If
+    Next i
+    
+    HexStringABinario = resultado
+End Function
+
+Function HexByteToBinary(hexByte As String) As String
+    Dim Valor As Integer
+    Dim resultado As String
+    Dim i As Integer
+    
+    On Error Resume Next
+    Valor = val("&H" & hexByte)
+    On Error GoTo 0
+    
+    resultado = ""
+    For i = 7 To 0 Step -1
+        If (Valor And (2 ^ i)) <> 0 Then
+            resultado = resultado & "1"
+        Else
+            resultado = resultado & "0"
+        End If
+    Next i
+    
+    HexByteToBinary = Chr(34) & resultado & Chr(34)
+End Function
+
+
+' ============================================================
+' TRANSFERENCIA RAM -> CACHÉ CON FORMATO BINARIO
+' ============================================================
+
+Sub TransferirRAMaCacheConAnimacion_Binario()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    Dim filaRAM As Long, filaL2 As Long, filaL1 As Long
+    Dim valorRAM As String
+    
+    ' --- PASO 1: RAM -> L2 ---
+    filaRAM = 3
+    filaL2 = 5
+    
+    Do While filaRAM <= 102 And filaL2 <= 66
+        valorRAM = ws.Range("AD" & filaRAM).Value
+        
+        If valorRAM <> "" Then
+            ' Animación
+            ws.Range("AD" & filaRAM).Interior.color = vbYellow
+            ws.Range("X" & filaL2).Interior.color = vbGreen
+            DoEvents
+            Call Espera(0.2)
+            
+            ' Copiar manteniendo formato (binario/hex)
+            ws.Range("X" & filaL2).Value = valorRAM
+            
+            ' Quitar resaltado
+            ws.Range("AD" & filaRAM).Interior.ColorIndex = xlNone
+            ws.Range("X" & filaL2).Interior.ColorIndex = xlNone
+            DoEvents
+            Call Espera(0.1)
+        End If
+        
+        filaRAM = filaRAM + 1
+        filaL2 = filaL2 + 1
+    Loop
+    
+    ' --- PASO 2: L2 -> L1 ---
+    filaL2 = 5
+    filaL1 = 5
+    
+    Do While filaL2 <= 66 And filaL1 <= 42
+        If ws.Range("X" & filaL2).Value <> "" Then
+            ' Animación
+            ws.Range("X" & filaL2).Interior.color = vbGreen
+            ws.Range("U" & filaL1).Interior.color = vbBlue
+            DoEvents
+            Call Espera(0.2)
+            
+            ' Mover dato
+            ws.Range("U" & filaL1).Value = ws.Range("X" & filaL2).Value
+            ws.Range("X" & filaL2).ClearContents
+            
+            ' Quitar resaltado
+            ws.Range("X" & filaL2).Interior.ColorIndex = xlNone
+            ws.Range("U" & filaL1).Interior.ColorIndex = xlNone
+            DoEvents
+            Call Espera(0.1)
+        End If
+        
+        filaL2 = filaL2 + 1
+        filaL1 = filaL1 + 1
+    Loop
+End Sub
+Sub CargarByteAMemoria(ws As Worksheet, valorMostrar As String)
+    ' Si la RAM no esta llena, cargar ahi
+    If FilaRAMActual <= RAM_FIN Then
+        ws.Range("AD" & FilaRAMActual).Value = valorMostrar
+        ws.Range("AD" & FilaRAMActual).Interior.color = vbYellow
+        DoEvents
+        Call Espera(0.08)
+        ws.Range("AD" & FilaRAMActual).Interior.ColorIndex = xlNone
+        FilaRAMActual = FilaRAMActual + 1
+    Else
+        ' RAM llena -> Cargar a Memoria Virtual (AJ5:AJ101)
+        If FilaVMemActual <= VMEM_FIN Then
+            ws.Range("AJ" & FilaVMemActual).Value = valorMostrar
+            ws.Range("AJ" & FilaVMemActual).Interior.color = vbMagenta  ' Color diferente para VM
+            DoEvents
+            Call Espera(0.08)
+            ws.Range("AJ" & FilaVMemActual).Interior.ColorIndex = xlNone
+            FilaVMemActual = FilaVMemActual + 1
+        Else
+            MsgBox "!Memoria Virtual tambien llena! No se pueden cargar mas datos.", vbExclamation
+        End If
+    End If
+End Sub
+
+Sub TransferirRAMaCacheVirtual(ws As Worksheet)
+    Dim filaRAM As Long
+    Dim filaL2 As Long
+    Dim filaL1 As Long
+    Dim valorRAM As String
+    Dim datosParaL2() As String
+    Dim totalDatos As Long
+    Dim i As Long
+    
+    ' Contar cuantos datos hay en RAM
+    totalDatos = 0
+    For filaRAM = RAM_INICIO To FilaRAMActual - 1
+        If ws.Range("AD" & filaRAM).Value <> "" Then
+            totalDatos = totalDatos + 1
+        End If
+    Next filaRAM
+    
+    If totalDatos = 0 Then Exit Sub
+    
+    ' ============================================
+    ' PASO 1: RAM -> L2 (con limpieza si se llena)
+    ' ============================================
+    filaRAM = RAM_INICIO
+    filaL2 = L2_INICIO
+    
+    Do While filaRAM < FilaRAMActual
+        valorRAM = ws.Range("AD" & filaRAM).Value
+        
+        If valorRAM <> "" Then
+            ' Verificar si L2 esta llena
+            If filaL2 > L2_FIN Then
+                ' L2 llena -> Limpiar y reiniciar
+                ws.Range("X" & L2_INICIO & ":X" & L2_FIN).ClearContents
+                ws.Range("X" & L2_INICIO & ":X" & L2_FIN).Interior.ColorIndex = xlNone
+                filaL2 = L2_INICIO
+                
+                ' Mostrar mensaje de page fault simulado
+                ws.Range("X" & L2_INICIO).Value = "[PAGE FAULT - L2 RELOAD]"
+                ws.Range("X" & L2_INICIO).Interior.color = vbRed
+                DoEvents
+                Call Espera(0.3)
+                ws.Range("X" & L2_INICIO).ClearContents
+                ws.Range("X" & L2_INICIO).Interior.ColorIndex = xlNone
+            End If
+            
+            ' Animacion RAM -> L2
+            ws.Range("AD" & filaRAM).Interior.color = vbGreen
+            ws.Range("X" & filaL2).Interior.color = vbGreen
+            DoEvents
+            Call Espera(0.08)
+            
+            ' Copiar dato
+            ws.Range("X" & filaL2).Value = valorRAM
+            
+            ' Quitar resaltado
+            ws.Range("AD" & filaRAM).Interior.ColorIndex = xlNone
+            ws.Range("X" & filaL2).Interior.ColorIndex = xlNone
+            
+            filaL2 = filaL2 + 1
+        End If
+        
+        filaRAM = filaRAM + 1
+    Loop
+    
+    ' ============================================
+    ' PASO 2: L2 -> L1 (con limpieza si se llena)
+    ' ============================================
+    filaL2 = L2_INICIO
+    filaL1 = L1_INICIO
+    
+    Do While filaL2 <= L2_FIN And ws.Range("X" & filaL2).Value <> ""
+        ' Verificar si L1 esta llena
+        If filaL1 > L1_FIN Then
+            ' L1 llena -> Limpiar y reiniciar
+            ws.Range("U" & L1_INICIO & ":U" & L1_FIN).ClearContents
+            ws.Range("U" & L1_INICIO & ":U" & L1_FIN).Interior.ColorIndex = xlNone
+            filaL1 = L1_INICIO
+            
+            ' Mostrar mensaje de cache miss simulado
+            ws.Range("U" & L1_INICIO).Value = "[CACHE MISS - L1 RELOAD]"
+            ws.Range("U" & L1_INICIO).Interior.color = vbRed
+            DoEvents
+            Call Espera(0.3)
+            ws.Range("U" & L1_INICIO).ClearContents
+            ws.Range("U" & L1_INICIO).Interior.ColorIndex = xlNone
+        End If
+        
+        ' Animacion L2 -> L1
+        ws.Range("X" & filaL2).Interior.color = vbBlue
+        ws.Range("U" & filaL1).Interior.color = vbBlue
+        DoEvents
+        Call Espera(0.08)
+        
+        ' Copiar dato (NO borrar de L2, es cache inclusiva)
+        ws.Range("U" & filaL1).Value = ws.Range("X" & filaL2).Value
+        
+        ' Quitar resaltado
+        ws.Range("X" & filaL2).Interior.ColorIndex = xlNone
+        ws.Range("U" & filaL1).Interior.ColorIndex = xlNone
+        
+        filaL2 = filaL2 + 1
+        filaL1 = filaL1 + 1
+    Loop
+    
+    ' ============================================
+    ' PASO 3: Si hay datos en Memoria Virtual, mostrar aviso
+    ' ============================================
+    If FilaVMemActual > VMEM_INICIO Then
+        MsgBox "Nota: " & (FilaVMemActual - VMEM_INICIO) & " bytes fueron cargados a Memoria Virtual (AJ5:AJ101)" & vbCrLf & _
+               "debido a que la RAM se lleno.", vbInformation, "Paginacion Activa"
+    End If
+End Sub
+
+
+' ============================================================
+' BOTONES PARA CAMBIAR FORMATO DE VISUALIZACIÓN
+' ============================================================
+
+Sub Btn_FormatoBinario()
+    FormatoRAM = "BIN"
+    MsgBox "Formato de RAM: BINARIO", vbInformation
+End Sub
+
+Sub Btn_FormatoHex()
+    FormatoRAM = "HEX"
+    MsgBox "Formato de RAM: HEXADECIMAL", vbInformation
+End Sub
+
+Sub Btn_FormatoTexto()
+    FormatoRAM = "DEC"
+    MsgBox "Formato de RAM: TEXTO/DECIMAL", vbInformation
+End Sub
+
+' Convierte la RAM actual al formato seleccionado
+Sub ConvertirRAMaFormato()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Simulador_x86")
+    
+    Dim fila As Long
+    Dim valorActual As String
+    Dim instrParts() As String
+    Dim opcode As String, destino As String, fuente As String
+    
+    For fila = 3 To 102
+        valorActual = ws.Range("AD" & fila).Value
+        
+        If valorActual <> "" Then
+            ' Si ya está en formato texto, parsear y convertir
+            If InStr(valorActual, " ") > 0 And Not EsFormatoBinario(valorActual) Then
+                ' Parsear instrucción tipo "MOV EAX, 10"
+                instrParts = Split(Replace(valorActual, ",", ""), " ")
+                If UBound(instrParts) >= 2 Then
+                    opcode = instrParts(0)
+                    destino = instrParts(1)
+                    fuente = instrParts(2)
+                    
+                    Select Case UCase(FormatoRAM)
+                        Case "HEX"
+                            ws.Range("AD" & fila).Value = CodificarInstruccion(opcode, destino, fuente)
+                        Case "BIN"
+                            ws.Range("AD" & fila).Value = HexStringABinario(CodificarInstruccion(opcode, destino, fuente))
+                    End Select
+                End If
+            End If
+        End If
+    Next fila
+    
+    ' También convertir caché L2 y L1
+    Call ConvertirCacheAFormato(ws)
+End Sub
+
+Function EsFormatoBinario(texto As String) As Boolean
+    ' Verifica si el texto parece ser binario (solo 0, 1 y espacios)
+    Dim i As Integer
+    Dim c As String
+    
+    For i = 1 To Len(texto)
+        c = Mid(texto, i, 1)
+        If c <> "0" And c <> "1" And c <> " " Then
+            EsFormatoBinario = False
+            Exit Function
+        End If
+    Next i
+    
+    EsFormatoBinario = True
+End Function
+
+Sub ConvertirCacheAFormato(ws As Worksheet)
+    Dim fila As Long
+    Dim valorActual As String
+    
+    ' Convertir L2 (X5:X66)
+    For fila = 5 To 66
+        valorActual = ws.Range("X" & fila).Value
+        If valorActual <> "" Then
+            ' Aplicar misma lógica de conversión
+            ' (simplificado - asume que tiene el mismo formato que RAM)
+        End If
+    Next fila
+    
+    ' Convertir L1 (U5:U42)
+    For fila = 5 To 42
+        valorActual = ws.Range("U" & fila).Value
+        If valorActual <> "" Then
+            ' Aplicar misma lógica de conversión
+        End If
+    Next fila
+End Sub
+
+
+Function ObtenerModRM(destino As String, fuente As String) As String
+    Dim modRM As Integer
+    modRM = (3 * 64) + (CodigoRegistro(fuente) * 8) + CodigoRegistro(destino)
+    ObtenerModRM = Right("00" & Hex(modRM), 2)
+End Function
+
+Function ObtenerModRMConOp(registro As String, regBits As Integer) As String
+    Dim modRM As Integer
+    modRM = (3 * 64) + (regBits * 8) + CodigoRegistro(registro)
+    ObtenerModRMConOp = Right("00" & Hex(modRM), 2)
+End Function
